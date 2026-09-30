@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Environment variables — NEVER commit real secrets
+backend/.env
+
+# SQLite database (generated at runtime)
+backend/*.db
+backend/**/*.db
+
+# Python cache
+*.pyc
+
+# Node / npm
+node_modules/
+frontend/node_modules/
+
+# Vite / build output
+frontend/dist/
+frontend/.vite/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
