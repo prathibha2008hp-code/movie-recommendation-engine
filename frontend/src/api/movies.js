@@ -9,7 +9,7 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: '/api',   // proxied to http://localhost:8000/api by vite.config.js
+  baseURL: '/api',   // proxied to https://movie-recommendation-engine-mwo1.onrender.com by vite.config.js
   timeout: 10_000,   // 10-second timeout
 })
 
