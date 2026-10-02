@@ -1,6 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
 import { getMovieVideos } from '../api/movies.js'
 
+/** Heart icon for the watchlist button */
+function HeartIcon({ filled = false }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" width="16" height="16">
+      <path
+        d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
+        fill={filled ? 'currentColor' : 'none'}
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 /**
  * MovieDetailModal
  * ----------------
@@ -69,7 +85,7 @@ function formatRuntime(mins) {
   return `${h}h ${m}m`
 }
 
-export default function MovieDetailModal({ movie, onClose }) {
+export default function MovieDetailModal({ movie, onClose, onWatchlist, isWatchlisted = false }) {
   // Trailer state
   const [trailerKey, setTrailerKey]         = useState(null)   // YouTube video ID
   const [trailerLoading, setTrailerLoading] = useState(false)
@@ -263,6 +279,18 @@ export default function MovieDetailModal({ movie, onClose }) {
                     </p>
                   )}
                 </div>
+              )}
+
+              {/* Watchlist button */}
+              {onWatchlist && (
+                <button
+                  className={`watchlist-btn${isWatchlisted ? ' watchlist-btn--active' : ''}`}
+                  onClick={() => onWatchlist(movie)}
+                  aria-label={isWatchlisted ? `Remove ${movie.title} from watchlist` : `Add ${movie.title} to watchlist`}
+                >
+                  <HeartIcon filled={isWatchlisted} />
+                  {isWatchlisted ? 'Remove from Watchlist' : 'Add to Watchlist'}
+                </button>
               )}
 
               {/* Trailer button */}
