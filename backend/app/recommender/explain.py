@@ -13,14 +13,14 @@ actually overlap between them.
 
 Feature columns used (all stored in SQLite, populated during ingestion):
 
-  genres   – "Action, Adventure, Science Fiction"   (comma-separated display names)
-  director – "James Cameron"                         (single name, title-cased)
-  cast     – "Sam Worthington Zoe Saldana ..."       (space-separated title-cased names)
-  keywords – "space_marine marine ..."               (space-separated underscore tokens)
+    genres   – comma-separated display names or legacy underscore tokens
+    director – a display name or a legacy underscore token
+    cast     – comma-separated names or legacy underscore-separated name tokens
+    keywords – space-separated underscore tokens
 
-We never invent reasons.  Every item in the explanation list is a feature
-that genuinely exists in BOTH movies.  If nothing meaningful overlaps we
-return a single generic fallback reason that reflects the overall score.
+We never invent reasons. Every item in the explanation list is a feature
+that genuinely exists in BOTH movies. If no metadata or overview terms
+overlap, the explanation contains no feature categories.
 
 The result is a plain Python dict that the route layer attaches to the
 recommendation response JSON, so the frontend just renders it.
@@ -33,9 +33,9 @@ Output shape
         {"type": "genre",    "label": "Science Fiction"},
         {"type": "director", "label": "James Cameron"},
         {"type": "cast",     "label": "Zoe Saldana"},
-        {"type": "keyword",  "label": "alien"},
-        {"type": "score",    "label": "High content similarity (0.72)"}
-    ]
+        {"type": "keyword",  "label": "alien"}
+    ],
+    "content_terms": ["alien"]
 }
 
 `type` is used by the frontend to pick a colour/icon.
@@ -44,24 +44,28 @@ Output shape
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import TYPE_CHECKING
+
+from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+
+from app.recommender.feature_text import normalise_text
 
 if TYPE_CHECKING:
     from app.models.movie import Movie
 
 
-# Maximum number of reasons to return — keeps the UI concise
-_MAX_REASONS = 6
-
-# Maximum keywords to surface — they are noisier than genres/cast
-_MAX_KEYWORDS = 2
+# Maximum shared keywords to surface — keywords are noisier than other metadata.
+_MAX_KEYWORDS = 4
+_MAX_CONTENT_TERMS = 4
 
 
-def _parse_csv(value: str | None) -> list[str]:
-    """Split a comma-separated string into a clean list of non-empty strings."""
+def _parse_display_values(value: str | None) -> list[str]:
+    """Read current comma-separated values or legacy whitespace-separated tokens."""
     if not value:
         return []
-    return [v.strip() for v in value.split(",") if v.strip()]
+    values = value.split(",") if "," in value else value.split()
+    return [v.strip().replace("_", " ") for v in values if v.strip()]
 
 
 def _parse_space(value: str | None) -> list[str]:
@@ -80,6 +84,25 @@ def _humanise_keyword(token: str) -> str:
     return token.replace("_", " ")
 
 
+def _shared_overview_terms(source: "Movie", candidate: "Movie") -> list[str]:
+    """Return frequent, meaningful terms present in both stored overviews."""
+    stop_words = ENGLISH_STOP_WORDS
+    source_terms = Counter(
+        term for term in normalise_text(source.overview or "").split()
+        if len(term) >= 4 and term not in stop_words
+    )
+    candidate_terms = Counter(
+        term for term in normalise_text(candidate.overview or "").split()
+        if len(term) >= 4 and term not in stop_words
+    )
+    shared_terms = source_terms.keys() & candidate_terms.keys()
+    ordered_terms = sorted(
+        shared_terms,
+        key=lambda term: (-(source_terms[term] + candidate_terms[term]), term),
+    )
+    return [term.replace("_", " ") for term in ordered_terms[:_MAX_CONTENT_TERMS]]
+
+
 def build_explanation(source: "Movie", candidate: "Movie", score: float) -> dict:
     """
     Compare two Movie objects and return a list of named overlapping features.
@@ -92,53 +115,39 @@ def build_explanation(source: "Movie", candidate: "Movie", score: float) -> dict
 
     Returns
     -------
-    dict with a single key "reasons" — a list of {"type": str, "label": str}
+    dict containing actual metadata overlaps and shared overview terms.
     """
     reasons: list[dict] = []
 
     # ── 1. Genre overlap ────────────────────────────────────────────────────
-    # genres is stored as "Action, Adventure, Science Fiction"
-    source_genres = set(_parse_csv(source.genres))
-    cand_genres   = set(_parse_csv(candidate.genres))
-    shared_genres = sorted(source_genres & cand_genres)
+    source_genres = {
+        genre.casefold(): genre for genre in _parse_display_values(source.genres)
+    }
+    candidate_genres = {
+        genre.casefold(): genre for genre in _parse_display_values(candidate.genres)
+    }
+    shared_genres = sorted(source_genres.keys() & candidate_genres.keys())
 
-    for g in shared_genres:
-        reasons.append({"type": "genre", "label": g})
-        if len(reasons) >= _MAX_REASONS:
-            return {"reasons": reasons}
+    for genre in shared_genres:
+        reasons.append({"type": "genre", "label": candidate_genres[genre]})
 
     # ── 2. Same director ────────────────────────────────────────────────────
-    # director is stored as "James Cameron" (title-cased, spaces)
-    src_dir  = (source.director or "").strip()
-    cand_dir = (candidate.director or "").strip()
-    if src_dir and cand_dir and src_dir.lower() == cand_dir.lower():
+    src_dir = " ".join((source.director or "").replace("_", " ").split())
+    cand_dir = " ".join((candidate.director or "").replace("_", " ").split())
+    if src_dir and cand_dir and src_dir.casefold() == cand_dir.casefold():
         reasons.append({"type": "director", "label": src_dir})
-        if len(reasons) >= _MAX_REASONS:
-            return {"reasons": reasons}
 
     # ── 3. Cast overlap ─────────────────────────────────────────────────────
-    # cast is stored as space-separated title-cased names:
-    # "Sam Worthington Zoe Saldana Sigourney Weaver"
-    # Each name is a single token (no spaces within a name here) after
-    # the ingest update that stores display-ready names.
-    # We treat each word as a token — first+last names are joined by
-    # ingest as "Sam_Worthington" etc., then title-cased to "Sam Worthington"
-    # for display.  After title-casing they appear as separate words in the
-    # cast string, so we re-join consecutive Title-cased words as full names.
-    # cast is now stored as comma-separated: "Sam Worthington, Zoe Saldana, ..."
-    src_cast  = _parse_csv(source.cast or "")
-    cand_cast = _parse_csv(candidate.cast or "")
+    src_cast = _parse_display_values(source.cast)
+    cand_cast = _parse_display_values(candidate.cast)
     shared_cast = sorted(
-        {n.lower() for n in src_cast} & {n.lower() for n in cand_cast}
+        {name.casefold() for name in src_cast} & {name.casefold() for name in cand_cast}
     )
-    # Re-map back to the original casing for display
-    cand_cast_lower_map = {n.lower(): n for n in cand_cast}
+    cand_cast_lower_map = {name.casefold(): name for name in cand_cast}
 
     for name_lower in shared_cast:
         display_name = cand_cast_lower_map.get(name_lower, name_lower.title())
         reasons.append({"type": "cast", "label": display_name})
-        if len(reasons) >= _MAX_REASONS:
-            return {"reasons": reasons}
 
     # ── 4. Keyword overlap ──────────────────────────────────────────────────
     # keywords are stored as space-separated underscore tokens
@@ -157,37 +166,22 @@ def build_explanation(source: "Movie", candidate: "Movie", score: float) -> dict
             continue
         reasons.append({"type": "keyword", "label": readable})
         kw_added += 1
-        if len(reasons) >= _MAX_REASONS:
-            return {"reasons": reasons}
 
     # ── 5. Language match ───────────────────────────────────────────────────
-    # Only surface this when it is non-English — English is the default and
-    # not informative as a reason.
     src_lang  = (source.original_language or "").strip().lower()
     cand_lang = (candidate.original_language or "").strip().lower()
-    if src_lang and cand_lang and src_lang == cand_lang and src_lang != "en":
+    if src_lang and cand_lang and src_lang == cand_lang:
         lang_label = {
-            "fr": "French", "de": "German", "es": "Spanish", "ja": "Japanese",
-            "ko": "Korean", "zh": "Chinese", "it": "Italian", "pt": "Portuguese",
-            "hi": "Hindi",  "ru": "Russian",
+            "ar": "Arabic", "de": "German", "en": "English", "es": "Spanish",
+            "fr": "French", "hi": "Hindi", "it": "Italian", "ja": "Japanese",
+            "ko": "Korean", "pt": "Portuguese", "ru": "Russian", "zh": "Chinese",
         }.get(src_lang, src_lang.upper())
-        reasons.append({"type": "language", "label": f"{lang_label} film"})
-        if len(reasons) >= _MAX_REASONS:
-            return {"reasons": reasons}
+        reasons.append({"type": "language", "label": lang_label})
 
-    # ── 6. Fallback — generic score-based reason ────────────────────────────
-    # Only shown when nothing else was found (unlikely with rich data, but
-    # handles edge cases like very sparse metadata).
-    if not reasons:
-        if score >= 0.50:
-            label = f"Very high content similarity ({score:.0%})"
-        elif score >= 0.25:
-            label = f"Strong thematic similarity ({score:.0%})"
-        else:
-            label = "Similar story and themes"
-        reasons.append({"type": "score", "label": label})
-
-    return {"reasons": reasons}
+    return {
+        "reasons": reasons,
+        "content_terms": _shared_overview_terms(source, candidate),
+    }
 
 
 # ── Helper: split display-ready cast string into full names ──────────────────

@@ -10,6 +10,7 @@ Run with:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import CORS_ORIGINS
 from app.database import Base, engine
 from app.routes import movies, recommendations
 
@@ -25,17 +26,14 @@ app = FastAPI(
 )
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
-# Allow the React dev server (port 5173) to call this backend (port 8000).
-# In production you would restrict origins to your real domain.
+# Set CORS_ORIGINS to the exact Vercel site origin in the Render dashboard.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",   # Vite dev server
-        "http://127.0.0.1:5173",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET"],
+    allow_headers=["Accept", "Content-Type"],
+    max_age=600,
 )
 
 # ─── Register route groups ────────────────────────────────────────────────────

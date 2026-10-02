@@ -164,6 +164,31 @@ npm run dev
 
 Open `http://localhost:5173` in your browser.
 
+### Deploy the backend to Render
+
+The SQLite database is generated from the tracked CSV files during each Render build; do not commit `backend/movies.db`.
+
+Set the Render service commands to:
+
+**Build command**
+
+```bash
+pip install -r backend/requirements.txt && cd backend && python -m app.recommender.ingest
+```
+
+**Start command**
+
+```bash
+cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+Add these environment variables in the Render dashboard:
+
+- `TMDB_API_KEY`: the server-side TMDB key (never add it to the frontend).
+- `CORS_ORIGINS`: the exact Vercel origin, such as `https://your-project.vercel.app` (no trailing slash). Multiple origins can be comma-separated.
+
+The local `.env` file is not used by Render; environment variables must be configured in the service dashboard.
+
 ---
 
 ## API Endpoint Documentation

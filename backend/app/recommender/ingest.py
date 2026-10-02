@@ -34,7 +34,6 @@ Each source is weighted by how many times it appears in the string:
 """
 
 import ast
-import re
 import sys
 from pathlib import Path
 
@@ -47,6 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # → backend/
 from app.config import DATA_DIR
 from app.database import Base, SessionLocal, engine
 from app.models.movie import Movie
+from app.recommender.feature_text import normalise_text
 
 
 # ─── JSON-like column parser ──────────────────────────────────────────────────
@@ -69,18 +69,11 @@ def _parse_list(raw) -> list:
 
 # ─── Text normalisation ───────────────────────────────────────────────────────
 
-# Pre-compiled pattern: keep only letters, digits, spaces, and underscores
-_CLEAN_RE = re.compile(r"[^a-z0-9 _]")
-
 def _normalise(text: str) -> str:
     """
-    Lowercase, strip punctuation, and collapse whitespace.
-    Underscores are kept because we use them as word-joiners for multi-word tokens.
+    Use the shared normalizer for both corpus generation and explanations.
     """
-    text = text.lower()
-    text = _CLEAN_RE.sub(" ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
+    return normalise_text(text)
 
 
 def _token(name: str) -> str:

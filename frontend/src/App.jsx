@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import SearchBar from './components/SearchBar.jsx'
 import MovieCard from './components/MovieCard.jsx'
 import RecommendationList from './components/RecommendationList.jsx'
@@ -6,7 +6,20 @@ import SelectedMovie from './components/SelectedMovie.jsx'
 import MovieDetailModal from './components/MovieDetailModal.jsx'
 import WatchlistPage from './components/WatchlistPage.jsx'
 import useWatchlist from './hooks/useWatchlist.js'
-import { searchMovies, getMovieDetails, getRecommendations } from './api/movies.js'
+import { searchMovies, getMovieDetails, getRecommendations, getApiErrorMessage } from './api/movies.js'
+
+const THEME_STORAGE_KEY = 'moviemind_theme'
+
+function getInitialTheme() {
+  try {
+    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY)
+    if (storedTheme === 'dark' || storedTheme === 'light') return storedTheme
+  } catch {
+    // Use the system preference when localStorage is unavailable.
+  }
+
+  return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+}
 
 /**
  * App.jsx — Root component
@@ -36,7 +49,7 @@ function SkeletonGrid({ count = 6 }) {
 }
 
 /** Navigation header — shown on all views */
-function AppHeader({ watchlistCount, currentView, onNavHome, onNavWatchlist }) {
+function AppHeader({ watchlistCount, currentView, theme, onToggleTheme, onNavHome, onNavWatchlist }) {
   return (
     <header className="app-header">
       <div className="app-header-inner">
@@ -50,36 +63,68 @@ function AppHeader({ watchlistCount, currentView, onNavHome, onNavWatchlist }) {
           <span className="header-brand-name">Movie<span>Mind</span></span>
         </button>
 
-        {/* Watchlist nav item */}
-        <button
-          className={`header-watchlist-btn${currentView === 'watchlist' ? ' header-watchlist-btn--active' : ''}`}
-          onClick={onNavWatchlist}
-          aria-label={`My Watchlist, ${watchlistCount} saved`}
-          aria-current={currentView === 'watchlist' ? 'page' : undefined}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true" width="16" height="16">
-            <path
-              d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
-              fill={currentView === 'watchlist' ? 'currentColor' : 'none'}
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-          <span>Watchlist</span>
-          {watchlistCount > 0 && (
-            <span className="header-watchlist-count" aria-hidden="true">
-              {watchlistCount}
-            </span>
-          )}
-        </button>
+        <div className="header-actions">
+          {/* Watchlist nav item */}
+          <button
+            className={`header-watchlist-btn${currentView === 'watchlist' ? ' header-watchlist-btn--active' : ''}`}
+            onClick={onNavWatchlist}
+            aria-label={`My Watchlist, ${watchlistCount} saved`}
+            aria-current={currentView === 'watchlist' ? 'page' : undefined}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" width="16" height="16">
+              <path
+                d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
+                fill={currentView === 'watchlist' ? 'currentColor' : 'none'}
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span>Watchlist</span>
+            {watchlistCount > 0 && (
+              <span className="header-watchlist-count" aria-hidden="true">
+                {watchlistCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            className="header-theme-btn"
+            onClick={onToggleTheme}
+            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+            title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+          >
+            {theme === 'dark' ? (
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20.9 13A8.5 8.5 0 0 1 11 3.1 8.5 8.5 0 1 0 20.9 13Z" />
+              </svg>
+            )}
+            <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+          </button>
+        </div>
       </div>
     </header>
   )
 }
 
 export default function App() {
+  const [theme, setTheme] = useState(getInitialTheme)
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme)
+    } catch {
+      // Theme switching still works for this session without storage.
+    }
+  }, [theme])
+
   // ── View state ────────────────────────────────────────────────────────────
   const [currentView, setCurrentView] = useState('home') // 'home' | 'watchlist'
 
@@ -93,21 +138,39 @@ export default function App() {
   const [loadingSearch, setLoadingSearch]     = useState(false)
   const [loadingRecs, setLoadingRecs]         = useState(false)
   const [error, setError]                     = useState(null)
+  const [retryRequest, setRetryRequest]       = useState(null)
   const [hasSearched, setHasSearched]         = useState(false)
 
   // ── Modal state ───────────────────────────────────────────────────────────
   const [modalMovie, setModalMovie]   = useState(null)
   const [modalLoading, setModalLoading] = useState(false)
+  const [serviceWaking, setServiceWaking] = useState(false)
+
+  const requestLoading = loadingSearch || loadingRecs || modalLoading
+
+  useEffect(() => {
+    if (!requestLoading || !import.meta.env.PROD) {
+      setServiceWaking(false)
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => setServiceWaking(true), 3000)
+    return () => window.clearTimeout(timeoutId)
+  }, [requestLoading])
 
   // ── Navigation ────────────────────────────────────────────────────────────
   const handleNavHome = useCallback(() => setCurrentView('home'), [])
   const handleNavWatchlist = useCallback(() => setCurrentView('watchlist'), [])
+  const handleToggleTheme = useCallback(() => {
+    setTheme((currentTheme) => currentTheme === 'dark' ? 'light' : 'dark')
+  }, [])
 
   // ── Search ────────────────────────────────────────────────────────────────
   const handleSearch = useCallback(async (query) => {
     if (!query.trim()) return
     setCurrentView('home')
     setError(null)
+    setRetryRequest(null)
     setLoadingSearch(true)
     setSearchResults([])
     setSelectedMovie(null)
@@ -116,8 +179,9 @@ export default function App() {
     try {
       const results = await searchMovies(query)
       setSearchResults(results)
-    } catch {
-      setError('Search failed. Make sure the backend is running on port 8000.')
+    } catch (requestError) {
+      setError(getApiErrorMessage(requestError, 'Movie search failed. Please try again.'))
+      setRetryRequest(() => () => handleSearch(query))
     } finally {
       setLoadingSearch(false)
     }
@@ -127,6 +191,7 @@ export default function App() {
   const handleSelectMovie = useCallback(async (tmdbId) => {
     setCurrentView('home')
     setError(null)
+    setRetryRequest(null)
     setLoadingRecs(true)
     setSelectedMovie(null)
     setRecommendations([])
@@ -140,8 +205,9 @@ export default function App() {
       ])
       setSelectedMovie(detail)
       setRecommendations(recs)
-    } catch {
-      setError('Could not load movie details. Please try again.')
+    } catch (requestError) {
+      setError(getApiErrorMessage(requestError, 'Could not load this movie. Please try again.'))
+      setRetryRequest(() => () => handleSelectMovie(tmdbId))
     } finally {
       setLoadingRecs(false)
     }
@@ -150,16 +216,21 @@ export default function App() {
   // ── ⓘ button click → open detail modal ───────────────────────────────────
   const handleOpenModal = useCallback(async (movieOrId) => {
     if (movieOrId && typeof movieOrId === 'object') {
+      setError(null)
+      setRetryRequest(null)
       setModalMovie(movieOrId)
       return
     }
 
+    setError(null)
+    setRetryRequest(null)
     setModalLoading(true)
     try {
       const detail = await getMovieDetails(movieOrId)
       setModalMovie(detail)
-    } catch {
-      setModalLoading(false)
+    } catch (requestError) {
+      setError(getApiErrorMessage(requestError, 'Could not load this movie. Please try again.'))
+      setRetryRequest(() => () => handleOpenModal(movieOrId))
     } finally {
       setModalLoading(false)
     }
@@ -184,9 +255,26 @@ export default function App() {
       <AppHeader
         watchlistCount={watchlist.length}
         currentView={currentView}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
         onNavHome={handleNavHome}
         onNavWatchlist={handleNavWatchlist}
       />
+
+      {error && (
+        <div className="page-body page-alerts">
+          <div className="error-banner" role="alert">
+            <span className="error-message">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              {error}
+            </span>
+            <div className="error-actions">
+              {retryRequest && <button className="error-retry" onClick={retryRequest}>Retry</button>}
+              <button className="error-close" onClick={() => { setError(null); setRetryRequest(null) }} aria-label="Dismiss">×</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ══ WATCHLIST VIEW ════════════════════════════════════════════════ */}
       {currentView === 'watchlist' && (
@@ -223,22 +311,11 @@ export default function App() {
           {/* ── PAGE BODY ───────────────────────────────────────────────── */}
           <main className="page-body">
 
-            {/* Error banner */}
-            {error && (
-              <div className="error-banner" role="alert">
-                <span className="error-message">
-                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                  {error}
-                </span>
-                <button className="error-close" onClick={() => setError(null)} aria-label="Dismiss">×</button>
-              </div>
-            )}
-
             {/* Search loading */}
             {loadingSearch && (
               <div className="loading-state" aria-live="polite">
                 <div className="spinner" />
-                <p>Searching movies…</p>
+                <p>{serviceWaking ? 'Movie service is waking up. This can take up to a minute…' : 'Searching movies…'}</p>
               </div>
             )}
 
@@ -281,6 +358,9 @@ export default function App() {
                   <div className="section-header">
                     <h2 className="section-title">Loading…</h2>
                   </div>
+                  <p className="loading-hint" aria-live="polite">
+                    {serviceWaking ? 'Movie service is waking up. This can take up to a minute…' : 'Finding similar movies…'}
+                  </p>
                   <SkeletonGrid count={6} />
                 </section>
               )}
@@ -300,6 +380,7 @@ export default function App() {
                     movies={recommendations}
                     onSelect={handleSelectMovie}
                     onInfo={handleOpenModal}
+                    sourceTitle={selectedMovie.title}
                   />
                 </>
               )}
@@ -311,8 +392,9 @@ export default function App() {
 
       {/* ══ MODAL (mounted outside views so it overlays everything) ═══════ */}
       {modalLoading && (
-        <div className="modal-fetch-indicator" aria-hidden="true">
+        <div className="modal-fetch-indicator" role="status" aria-live="polite">
           <div className="spinner" />
+          {serviceWaking && <span>Movie service is waking up…</span>}
         </div>
       )}
 

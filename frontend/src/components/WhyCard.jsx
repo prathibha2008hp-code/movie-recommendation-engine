@@ -1,17 +1,18 @@
 /**
  * WhyCard
  * -------
- * Collapsible "Why recommended?" panel that sits below each recommendation
+ * Collapsible "Why this movie?" panel that sits below each recommendation
  * card in the grid.
  *
  * Uses the native <details>/<summary> HTML elements so it works without
  * any JS state — the browser handles open/close natively and accessibly.
  *
  * Props:
- *   reasons – array of { type: string, label: string }
- *             type is one of: "genre" | "director" | "cast" | "keyword" | "language" | "score"
- *             label is the human-readable text to display
- *   title   – movie title (used for aria labelling)
+ *   reasons         – verified metadata overlaps from the recommendation API
+ *   contentTerms    – shared, normalized terms from both movie overviews
+ *   similarityScore – cosine similarity returned by the recommendation engine
+ *   sourceTitle     – title of the movie used to generate recommendations
+ *   title           – recommended movie title (used for aria labelling)
  */
 
 /**
@@ -19,17 +20,27 @@
  * Each type gets a distinct pill colour so the user can scan quickly.
  */
 const TYPE_CONFIG = {
-  genre:    { icon: '🎬', label: 'Genre',    cls: 'why-pill--genre'    },
-  director: { icon: '🎥', label: 'Director', cls: 'why-pill--director' },
-  cast:     { icon: '⭐', label: 'Cast',     cls: 'why-pill--cast'     },
-  keyword:  { icon: '🏷', label: 'Theme',    cls: 'why-pill--keyword'  },
-  language: { icon: '🌐', label: 'Language', cls: 'why-pill--language' },
-  score:    { icon: '📊', label: 'Match',    cls: 'why-pill--score'    },
+  genre:    { icon: '🎭', label: 'Genres' },
+  director: { icon: '🎬', label: 'Director' },
+  cast:     { icon: '👥', label: 'Cast overlap' },
+  keyword:  { icon: '🔑', label: 'Shared keywords' },
+  language: { icon: '🌐', label: 'Language' },
 }
 
-export default function WhyCard({ reasons, title }) {
-  // If there are no reasons, render nothing at all — keeps the grid clean
-  if (!reasons || reasons.length === 0) return null
+export default function WhyCard({ reasons = [], contentTerms = [], similarityScore, sourceTitle, title }) {
+  const groupedReasons = Object.entries(TYPE_CONFIG)
+    .map(([type, config]) => ({
+      ...config,
+      type,
+      labels: [...new Set(reasons.filter((reason) => reason.type === type && reason.label).map((reason) => reason.label))],
+    }))
+    .filter((group) => group.labels.length > 0)
+  const validContentTerms = [...new Set(contentTerms.filter((term) => typeof term === 'string' && term.trim()))]
+  const matchPercent = Number.isFinite(similarityScore)
+    ? Math.round(Math.max(0, Math.min(1, similarityScore)) * 100)
+    : null
+
+  if (!groupedReasons.length && !validContentTerms.length && matchPercent === null) return null
 
   return (
     <details className="why-card">
@@ -40,24 +51,45 @@ export default function WhyCard({ reasons, title }) {
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </span>
-        <span className="why-summary-text">Why recommended?</span>
+        <span className="why-summary-text">Why this movie?</span>
       </summary>
 
       <div className="why-body">
-        <p className="why-intro">Matched because you liked:</p>
-        <ul className="why-list" role="list">
-          {reasons.map((r, i) => {
-            const cfg = TYPE_CONFIG[r.type] || TYPE_CONFIG.score
-            return (
-              <li key={i} className="why-item">
-                <span className={`why-pill ${cfg.cls}`} aria-label={`${cfg.label}: ${r.label}`}>
-                  <span className="why-pill-icon" aria-hidden="true">{cfg.icon}</span>
-                  <span className="why-pill-label">{r.label}</span>
-                </span>
-              </li>
-            )
-          })}
-        </ul>
+        {sourceTitle && <p className="why-intro">Compared with {sourceTitle}</p>}
+        <div className="why-groups">
+          {groupedReasons.map((group) => (
+            <section className="why-group" key={group.type}>
+              <h3 className="why-group-heading">
+                <span aria-hidden="true">{group.icon}</span>
+                {group.label}
+              </h3>
+              <div className="why-values">
+                {group.labels.map((label) => <span className="why-value" key={label}>{label}</span>)}
+              </div>
+            </section>
+          ))}
+
+          {validContentTerms.length > 0 && (
+            <section className="why-group">
+              <h3 className="why-group-heading"><span aria-hidden="true">📝</span>Shared overview terms</h3>
+              <div className="why-values">
+                {validContentTerms.map((term) => <span className="why-value" key={term}>{term}</span>)}
+              </div>
+            </section>
+          )}
+        </div>
+
+        {matchPercent !== null && (
+          <div className="why-match">
+            <div className="why-match-heading">
+              <span>Content match</span>
+              <strong>{matchPercent}%</strong>
+            </div>
+            <div className="why-match-track" role="meter" aria-label={`Content match ${matchPercent}%`} aria-valuemin="0" aria-valuemax="100" aria-valuenow={matchPercent}>
+              <span style={{ width: `${matchPercent}%` }} />
+            </div>
+          </div>
+        )}
       </div>
     </details>
   )

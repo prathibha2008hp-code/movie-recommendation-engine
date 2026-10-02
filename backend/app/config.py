@@ -16,6 +16,19 @@ load_dotenv(BASE_DIR / ".env")
 # TMDB API key — set this in backend/.env
 TMDB_API_KEY: str = os.getenv("TMDB_API_KEY", "")
 
+# Comma-separated browser origins. Set the exact Vercel origin in Render.
+_configured_origins = [
+	origin.strip().rstrip("/")
+	for origin in os.getenv("CORS_ORIGINS", "").split(",")
+	if origin.strip()
+]
+CORS_ORIGINS: list[str] = _configured_origins or [
+	"http://localhost:5173",
+	"http://127.0.0.1:5173",
+]
+if "*" in CORS_ORIGINS:
+	raise ValueError("CORS_ORIGINS must contain explicit origins, not '*'.")
+
 # Base URL for all TMDB API calls
 TMDB_BASE_URL: str = "https://api.themoviedb.org/3"
 

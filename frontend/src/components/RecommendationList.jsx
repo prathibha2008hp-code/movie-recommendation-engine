@@ -7,7 +7,7 @@ import WhyCard from './WhyCard.jsx'
  * Shows the grid of content-similar movies below the selected movie banner.
  * Each movie card is paired with a collapsible WhyCard explanation panel.
  */
-export default function RecommendationList({ movies, onSelect, onInfo }) {
+export default function RecommendationList({ movies, onSelect, onInfo, sourceTitle }) {
   if (!movies) return null
 
   return (
@@ -56,6 +56,9 @@ export default function RecommendationList({ movies, onSelect, onInfo }) {
                 />
                 <WhyCard
                   reasons={movie.explanation?.reasons}
+                  contentTerms={movie.explanation?.content_terms}
+                  similarityScore={movie.similarity_score}
+                  sourceTitle={sourceTitle}
                   title={movie.title}
                 />
               </div>
